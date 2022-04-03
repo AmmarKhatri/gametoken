@@ -23,10 +23,10 @@ contract GameToken {
     }
     //random number generator
     function random() private view returns (uint) {
-        return uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp))) % 5;
+        return uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp))) % 6;
     }
     function random2() private view returns (uint) {
-        return uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, msg.sender))) % 5;
+        return uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, msg.sender))) % 6;
     }
     IERC20 token;
     //prices
@@ -72,29 +72,26 @@ contract GameToken {
     }
 
     function get_upgradeCost(uint index) external view returns (uint){
-        return ((farms[msg.sender][index].size + 1) ** 2 - (farms[msg.sender][index].size) ** 2 * farm / 25);
+        return (((farms[msg.sender][index].size + 1) ** 2) - ((farms[msg.sender][index].size) ** 2)) * farm / 25;
     }
 
     //store functions
-    function buyNuts()external returns (bool){
+    function buyNuts(uint i)external returns (bool){
         //requires approve
-        require(nuts[msg.sender] < 50, "Maximum nuts owned");
-        token.transferFrom(msg.sender, address(this), nut);
-        nuts[msg.sender] += 1;
+        token.transferFrom(msg.sender, address(this),i * nut);
+        nuts[msg.sender] += i;
         return true;
     }
-    function buySap()external returns (bool){
+    function buySap(uint i)external returns (bool){
         //requires approve
-        require(saps[msg.sender] < 50, "Maximum saps owned");
-        token.transferFrom(msg.sender, address(this), sap);
-        saps[msg.sender] += 1;
+        token.transferFrom(msg.sender, address(this), i * sap);
+        saps[msg.sender] += i;
         return true;
     }
-    function buyPotion()external returns (bool){
+    function buyPotion(uint i)external returns (bool){
         //requires approve
-        require(potions[msg.sender] < 50, "Maximum potions owned");
-        token.transferFrom(msg.sender, pool, potion);
-        saps[msg.sender] += 1;
+        token.transferFrom(msg.sender, pool, i * potion);
+        saps[msg.sender] += i;
         return true;
     }
 
@@ -110,7 +107,7 @@ contract GameToken {
         require(index < 10, "Invalid farm number");
         require(farms[msg.sender][index].size < 10, "Farm is fully upgraded");
         //requires approve
-        token.transferFrom(msg.sender, pool,((farms[msg.sender][index].size + 1) ** 2 - (farms[msg.sender][index].size) ** 2 * farm / 25));
+        token.transferFrom(msg.sender, pool,(((farms[msg.sender][index].size + 1) ** 2) - ((farms[msg.sender][index].size) ** 2)) * farm / 25);
         farms[msg.sender][index].size += 1;
         return true;
     }
@@ -139,6 +136,7 @@ contract GameToken {
     event TradeCreated (
     uint indexed tradeId,
     uint itemId,
+    uint timestamp,
     address s_address,
     uint qty,
     uint price
@@ -146,6 +144,7 @@ contract GameToken {
     event FarmTradeCreated (
     uint indexed farmTradeId,
     address s_address,
+    uint timestamp,
     uint size,
     uint price
     );
@@ -188,7 +187,7 @@ contract GameToken {
         }
         _tradeId.increment();
         trades[_tradeId.current()] = Trade(msg.sender,_itemId,_qty,_price, address(0), false, false);
-        emit TradeCreated(_tradeId.current(), _itemId, msg.sender, _qty, _price);
+        emit TradeCreated(_tradeId.current(), _itemId,block.timestamp, msg.sender, _qty, _price);
         return true;
     }
     function createFarmTrade(uint _size, uint _price, uint index)external returns(bool){
@@ -197,7 +196,7 @@ contract GameToken {
         farmtrades[_farmTradeId.current()] = FarmTrade(msg.sender,index,_size,_price, address(0), false, false);
         farms[msg.sender][index].size = 0;
         farms[msg.sender][index].planted = 0;
-        emit FarmTradeCreated(_farmTradeId.current(), msg.sender, _size,_price);
+        emit FarmTradeCreated(_farmTradeId.current(), msg.sender, block.timestamp,_size,_price);
         return true;
     }
 
@@ -243,12 +242,22 @@ contract GameToken {
     function cancelTrade(uint tradeId)external returns(bool){
         require(trades[tradeId].s_address == msg.sender, "Not authorized to cancel this trade.");
         require(trades[tradeId].sold == false, "Item(s) already sold.");
+        if(trades[tradeId].itemId == 0) {
+            saps[msg.sender] += trades[tradeId].qty;
+        } else if(trades[tradeId].itemId == 1){
+            nuts[msg.sender] += trades[tradeId].qty;
+        } else if(trades[tradeId].itemId == 2){
+            potions[msg.sender] += trades[tradeId].qty;
+        } else {
+            return false;
+        }
         trades[tradeId].cancelled = true;
         return true;
     }
     function cancelFarmTrade(uint farmTradeId)external returns(bool){
         require(farmtrades[farmTradeId].s_address == msg.sender, "Not authorized to cancel this trade.");
         require(farmtrades[farmTradeId].sold == false, "Farm already sold.");
+        farms[msg.sender][farmtrades[farmTradeId].plot_index].size = farmtrades[farmTradeId].size;
         farmtrades[farmTradeId].cancelled = true;
         return true;
     }
@@ -270,7 +279,7 @@ contract GameToken {
     }
 
     function plantNut(uint farmId)external returns(bool){
-        require(farmId <= 10 && nuts[msg.sender] > 0, "Invalid request");
+        require(farmId < 10 && nuts[msg.sender] > 0, "Invalid request");
         require(farms[msg.sender][farmId].planted < (farms[msg.sender][farmId].size ** 2), "Maximum occupancy.");
         nuts[msg.sender] -= 1;
         trees[msg.sender] += 1;
